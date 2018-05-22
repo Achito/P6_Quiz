@@ -156,59 +156,138 @@ exports.check = (req, res, next) => {
 
 
 
-exports.randomplay = (req,res,next) =>{
-    req.session.randomPlay = req.session.randomPlay || [];
 
-   const whereOpt = {'id':{[Sequelize.Op.notIn]: req.session.randomPlay}};
+//GET /quizzes/randomplay
+exports.randomPlay = (req, res, next) => {
+    let toBeResolved = [];
+    let score;
+    let ind = false;
+    quedanQuizzes()
+        .then(quizzes => {
+            //Primera vez que se juega
+            console.log( "score " +req.session.score);
+            console.log(req.session.randomPlay);
+            if (req.session.score === undefined) {
+                req.session.score = 0;
+                for (i = 0; i < quizzes.length; i++) {
+                    toBeResolved[i] = quizzes[i].id;
+                }
+                score=req.session.score;
+                req.session.randomPlay = toBeResolved;
+                let indice = Math.floor(Math.random() * toBeResolved.length);
+                let id = toBeResolved[indice];
+                toBeResolved.splice(indice, 1);
+                req.session.randomPlay = toBeResolved;
+                ind = true;
+                validateId(id)
+                    .then(quiz => {
+                        res.render('quizzes/random_play', {
+                            score: score,
+                            quiz: quiz
+                        });
+                    })
+                    .catch(error => {
+                        //Acción a ejecutar en caso de error
+                        console.log("Error")
+                    })
+            }
+            //Seguir jugando
+            if((req.session.score<quizzes.length) && (ind===false)){
+                toBeResolved=req.session.randomPlay;
+                score=req.session.score;
+                let indice = Math.floor(Math.random() * toBeResolved.length);
+                let id = toBeResolved[indice];
+                toBeResolved.splice(indice, 1);
+                req.session.randomPlay = toBeResolved;
+                validateId(id)
+                    .then(quiz => {
+                        res.render('quizzes/random_play', {
+                            score: score,
+                            quiz: quiz
 
-    models.quiz.count({where:whereOpt})
-        .then(function (count) {
-            if(!count){
-                const score = req.session.randomPlay.length;
-                req.session.randomPlay = [];
-                res.render('quizzes/random_nomore',{
-                    score:score
-                });
-            };
-            return models.quiz.findAll({
-                where: whereOpt,
-                offset: Math.floor(Math.random()*count),
-                limit: 1
-            })
-                .then(function (quizzes) {
-                    return quizzes[0];
+                        })
+                    })
+                    .catch(error => {
+                        //Acción a ejecutar en caso de error
+                        console.log("Error")
+                    })
 
-                });
+            }
+            if(req.session.score>=quizzes.length){
+                score = req.session.score;
+                req.session.score=undefined;
+                res.render('quizzes/random_nomore', {score: score})
 
+            }
+            else{
+                console.log("No entro");
+                console.log("La puntuacion va a ser "+ req.session.score);
+                console.log("El indice va a ser "+ ind);
+                console.log("La longitud sera "+ quizzes.length);
+            }
         })
-        .then(function (quiz) {
-            res.render('quizzes/random_play',{
-                quiz: quiz,
-                score: req.session.randomPlay.length
-            });
 
-        })
-        .catch(function (error) {
-            next(error);
-        });
+
 };
 
-exports.randomcheck = (req, res, next) => {
 
+//GET /quizzes/random_check/:quizId
+exports.randomCheck = (req, res, next) => {
     const {quiz, query} = req;
 
     const answer = query.answer || "";
     const result = answer.toLowerCase().trim() === quiz.answer.toLowerCase().trim();
 
+    let score;
+
     if(result){
-        if(req.session.randomPlay.indexOf(req.quiz.id)=== -1){
-            req.session.randomPlay = req.session.randomPlay.concat(quiz.id);
-        }
+        
+        req.session.score++;
+        score = req.session.score;
+
     }
-    const score = req.session.randomPlay.length;
+    else {
+        score=req.session.score;
+        req.session.score=0;
+
+    }
+
     res.render('quizzes/random_result', {
-        result,
-        answer,
-        score
+        score:score,
+        result:result,
+        answer:answer
+    });
+
+
+};
+
+
+const validateId = id => {
+    return new Sequelize.Promise((resolve, reject) => {
+        models.quiz.findById(id)
+            .then(quiz => {
+                if (!quiz) {
+                    reject(new Error(`Quiz no existe`));
+                } else {
+                    resolve(quiz); 
+
+                }
+            })
+
+
+    });
+};
+
+const quedanQuizzes = () => {
+    return new Sequelize.Promise((resolve, reject) => {
+        models.quiz.findAll()
+            .then(quizzes => {
+                if (quizzes.length > 0) {
+                    resolve(quizzes);
+                }
+                else {
+                    reject(new Error("No quizzes"));
+                }
+            })
     });
 };
